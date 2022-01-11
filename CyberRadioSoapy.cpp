@@ -4,11 +4,14 @@
 
 static cyberradio_devinfo kwargs_to_devinfo(const SoapySDR::Kwargs &args)
 {
-    std::cout << "-- kwargs_to_devinfo" << std::endl;
     cyberradio_devinfo info;
     info.host = args.at("host");
     info.radio = args.at("radio");
-    std::cout << " -- " << info.host << " : " << info.radio << std::endl;
+    if ( args.at("verbose") == "true" ) {
+        info.verbose = true;
+    } else {
+        info.verbose = false;
+    }
     return info;
 }
 
@@ -17,8 +20,7 @@ static cyberradio_devinfo kwargs_to_devinfo(const SoapySDR::Kwargs &args)
  **********************************************************************/
 SoapySDR::KwargsList findCyberRadioSoapy(const SoapySDR::Kwargs &args)
 {
-    std::cout << "-- findCyberRadioSoapy" << std::endl;
-    //locate the device on the system...
+        //locate the device on the system...
     //return a list of 0, 1, or more argument maps that each identify a device
     SoapySDR::KwargsList results;
     const cyberradio_devinfo info = kwargs_to_devinfo( args );
@@ -35,9 +37,8 @@ SoapySDR::Device *makeCyberRadioSoapy(const SoapySDR::Kwargs &args)
 {
     //create an instance of the device object given the args
     //here we will translate args into something used in the constructor
-    std::cout << "-- makeCyberRadioSoapy" << std::endl;
     cyberradio_devinfo info = kwargs_to_devinfo( args );
-    return new CyberRadioSoapy( info.host, info.radio );
+    return new CyberRadioSoapy( info.host, info.radio, info.verbose );
 }
 
 CyberRadioSoapy::CyberRadioSoapy( const std::string host, const std::string radio, bool verbose)
@@ -55,6 +56,9 @@ CyberRadioSoapy::CyberRadioSoapy( const std::string host, const std::string radi
     std::cout << " -- Firmware Ver  : " << versionInfo["firmwareVersion"] << std::endl;
     std::cout << " -- Unit Revision : " << versionInfo["unitRevision"] << std::endl;
     std::cout << " -- HW Revision   : " << versionInfo["hardwareVersion"] << std::endl;
+    _cfgDict = _handler->getConfiguration();
+    
+    _handler->queryConfiguration();
 }
 
 /*******************************************************************
@@ -109,7 +113,7 @@ void CyberRadioSoapy::setFrequency(const int direction, const size_t channel,
 }
 
 double CyberRadioSoapy::getFrequency(const int direction, 
-                                      const size_t channel, const std::string &name)
+                                      const size_t channel, const std::string &name) const
 {
     UNUSED(name);
     double freq = 0;
@@ -121,22 +125,66 @@ double CyberRadioSoapy::getFrequency(const int direction,
 
 SoapySDR::RangeList CyberRadioSoapy::getFrequencyRange(const int direction, 
                                                        const size_t channel, 
-                                                       const std::string &name)
+                                                       const std::string &name) const
 {
+    SoapySDR::RangeList R;
+    std::cout << "getFrequencyRange" <<std::endl;
     UNUSED(channel);
     UNUSED(name);
+    LibCyberRadio::BasicDoubleList L;
     if( direction == SOAPY_SDR_RX ){
-        LibCyberRadio::BasicDoubleList L = _handler->getTunerFrequencyRange( );
+        L = _handler->getTunerFrequencyRange( );
+        for( int i = 0; i < L.size(); i++ ){
+            std::cout << L.at(i) << std::endl;
+            SoapySDR::Range e( L.at(i), L.at(i) );
+            R.push_back( e );
+        }
     }
+    for(double n : L)
+    {
+        std::cout << n << "\n";
+    }
+    return R;
 }                                                       
 
-
-
 /*******************************************************************
- * Stream API
- ******************************************************************/
+* Stream API
+******************************************************************/
+
+void CyberRadioSoapy::setSampleRate(const int direction, const size_t channel, const double rate)
+{
+    std::cout << "CyberRadioSoapy::setSampleRate" <<std::endl;
+    _handler->setWbddcRateIndex( 0, 38 );
+}
+double CyberRadioSoapy::getSampleRate(const int direction, const size_t channel) const
+{
+    double S = 0;
+    return S;
+}
+SoapySDR::RangeList CyberRadioSoapy::getSampleRateRange(const int direction, const size_t channel) const
+{
+    SoapySDR::RangeList R;
+    
+    LibCyberRadio::BasicDoubleList L;
+    if( direction == SOAPY_SDR_RX ){
+        L = _handler->getNbddcRateList();
+        for( int i = 0; i < L.size(); i++ ){
+            //std::cout << L.at(i) << std::endl;
+            SoapySDR::Range e( L.at(i), L.at(i) );
+            R.push_back( e );
+        }
+        L = _handler->getWbddcRateList();
+        for( int i = 0; i < L.size(); i++ ){
+            //std::cout << L.at(i) << std::endl;
+            SoapySDR::Range e( L.at(i), L.at(i) );
+            R.push_back( e );
+        }
+        
+    }
+    return R;
+}
 
 /***********************************************************************
- * Registration
- **********************************************************************/
+* Registration
+**********************************************************************/
 static SoapySDR::Registry registerCyberRadioSoapy("cyberradiosoapy", &findCyberRadioSoapy, &makeCyberRadioSoapy, SOAPY_SDR_ABI_VERSION);

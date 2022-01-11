@@ -1,5 +1,6 @@
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Registry.hpp>
+#include <SoapySDR/Logger.hpp>
 #include <LibCyberRadio/Driver/RadioHandler.h>
 #include <LibCyberRadio/Driver/Driver.h>
 #include <iostream>
@@ -8,6 +9,7 @@
 struct cyberradio_devinfo {
     std::string host;
     std::string radio;
+    bool verbose;
 };
 
 /***********************************************************************
@@ -40,10 +42,17 @@ public:
                       const std::string &name, const double frequency, 
                       const SoapySDR::Kwargs &);
     double getFrequency(const int direction, 
-                        const size_t channel, const std::string &name);
+                        const size_t channel, const std::string &name) const;
     SoapySDR::RangeList getFrequencyRange(const int direction, 
                                           const size_t channel, 
-                                          const std::string &name);
+                                          const std::string &name) const;
+
+    /*******************************************************************
+    * Sample Rate API
+    ******************************************************************/
+    void setSampleRate(const int direction, const size_t channel, const double rate);
+    double getSampleRate(const int direction, const size_t channel) const;
+    SoapySDR::RangeList getSampleRateRange(const int direction, const size_t channel) const;
 
 private:
     std::shared_ptr<LibCyberRadio::Driver::RadioHandler> _handler;

@@ -45,3 +45,5 @@ SOAPY_SDR_MODULE_UTIL(
     SOURCES CyberRadioSoapy.cpp
     LIBRARIES ${LIBCYBERRADIO_SOAPY_LIBRARIES}
 )
+
+add_subdirectory(example)
