@@ -3,6 +3,7 @@
 #include <SoapySDR/Logger.hpp>
 #include <LibCyberRadio/Driver/RadioHandler.h>
 #include <LibCyberRadio/Driver/Driver.h>
+#include "LibCyberRadio/Common/VitaIqSource.h"
 #include <iostream>
 #include <tuple>
 #include <sstream>
@@ -35,6 +36,7 @@ struct cyberradio_channel_info {
     std::string hostStreamIp;
     std::string sourceStreamIp;
     std::string hostStreamMac;
+    std::vector<int> destPorts;
 };
 
 /***********************************************************************
@@ -83,6 +85,17 @@ public:
                         const std::string & format, 
                         const std::vector< size_t >& channels,
                         const SoapySDR::Kwargs & args) override;
+    int activateStream(SoapySDR::Stream *handle, 
+                                    const int flags, 
+                                    const long long timeNs, 
+                                    const size_t numElems);                        
+    int readStream(SoapySDR::Stream *handle, void * const *buffs, 
+                           const size_t numElems, 
+                           int &flags, 
+                           long long &timeNs, 
+                           const long timeoutUs);   
+    size_t getStreamMTU(SoapySDR::Stream *handle) const;
+                     
 private:
     std::shared_ptr<LibCyberRadio::Driver::RadioHandler> _handler;
     LibCyberRadio::Driver::ConfigurationDict _cfgDict;
@@ -92,6 +105,7 @@ private:
     std::vector<LibCyberRadio::Driver::ConfigurationDict> wbddcCfgVector;
     std::vector<LibCyberRadio::Driver::ConfigurationDict> nbddcCfgVector;
     std::vector<cyberradio_channel_info> _channelInfoVector;
+    std::vector<LibCyberRadio::VitaIqSource *> _vitaSourceStreamVector;
     void collectGlobalRates();
     std::vector<std::string> _streamingInterfaces;
     std::string _host;

@@ -124,7 +124,7 @@ CyberRadioSoapy::CyberRadioSoapy( const std::string host,
         int currPort = udpPortBase;
         _handler->setDataPortSourceIP(i, _channelInfoVector.at(i).sourceStreamIp);
         int dests = _handler->getNumDataPortDipEntries();
-        for (int j = 0;  j < 10; j++)
+        for (int j = 0;  j < dests; j++)
         {
             currPort = udpPortBase + (1000 * i) + j; // 10000,10001..11000,11001 etc.
             _handler->setDataPortDestInfo(i, j,
@@ -132,6 +132,7 @@ CyberRadioSoapy::CyberRadioSoapy( const std::string host,
                     _channelInfoVector.at(i).hostStreamMac,
                     currPort,
                     currPort);
+            _channelInfoVector.at(i).destPorts.push_back(currPort);
         }
 
     }
@@ -245,6 +246,7 @@ void CyberRadioSoapy::collectGlobalRates( void )
 
 void CyberRadioSoapy::setSampleRate(const int direction, const size_t channel, const double rate)
 {
+    UNUSED(direction);
     int rateIndex = -1;
     std::map<int, double>::iterator it;
     for( it = _globalRates.begin(); it != _globalRates.end(); it++)
@@ -269,6 +271,7 @@ void CyberRadioSoapy::setSampleRate(const int direction, const size_t channel, c
 
 double CyberRadioSoapy::getSampleRate(const int direction, const size_t channel) const
 {
+    UNUSED(direction);
     double S = 0;
     int rInd = _channelInfoVector.at(channel).rateIndex;
     if( rInd <= 15 ){
@@ -309,9 +312,49 @@ SoapySDR::Stream* CyberRadioSoapy::setupStream ( const int direction,
                                        const std::vector< size_t >& channels,
                                        const SoapySDR::Kwargs& args)
 {
+    UNUSED(format);
+    LibCyberRadio::VitaIqSource * stream;
+    if( direction == SOAPY_SDR_RX ) {
+        // only process first channel.
+        int dest_port = _channelInfoVector.at(0).destPorts.at(0);
+        stream = new LibCyberRadio::VitaIqSource("NDR358IQ", 
+                    551, 
+                    _handler->getVitaPayloadSize(), 
+                    _handler->getVitaHeaderSize(),
+                    _handler->getVitaTailSize(), 
+                    true, false, "0.0.0.0", dest_port, _verbose);
+    } else {
+        return reinterpret_cast<SoapySDR::Stream *>(NULL);
+    }
+    return reinterpret_cast<SoapySDR::Stream *>(stream);
+}
 
-    SoapySDR::Stream * h;
-    return h;
+int CyberRadioSoapy::activateStream(SoapySDR::Stream *handle, 
+                                    const int flags, 
+                                    const long long timeNs, 
+                                    const size_t numElems)
+{
+    _handler->enableWbddc(0, true);
+}
+
+int CyberRadioSoapy::readStream(SoapySDR::Stream *handle, void * const *buffs, 
+                           const size_t numElems, 
+                           int &flags, 
+                           long long &timeNs, 
+                           const long timeoutUs)
+{
+    LibCyberRadio::VitaIqSource *stream = reinterpret_cast<LibCyberRadio::VitaIqSource *>(handle);
+    LibCyberRadio::Vita49PacketVector packets;
+    int n_recv = stream->getPackets(numElems, packets);
+    //void * n = new char[packets.size() * sizeof(packets)];
+    std::memcpy( (void *)buffs, packets.data(), packets.size() * sizeof(packets) );
+    return n_recv;
+}
+
+size_t CyberRadioSoapy::getStreamMTU(SoapySDR::Stream *handle) const
+{
+    LibCyberRadio::VitaIqSource *stream = reinterpret_cast<LibCyberRadio::VitaIqSource *>(handle);
+    return (long unsigned int)(stream->getPacketSize());
 }
 
 /**
