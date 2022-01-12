@@ -15,16 +15,37 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+
+
 int main( )
 {
-    std::string argStr("driver=cyberradiosoapy,host=192.168.0.10,radio=ndr358,verbose=false");
+    std::string argStr("driver=cyberradiosoapy,host=192.168.0.10,streamif=eth10:eth11:eth12:eth13,radio=ndr358,verbose=true");
     std::cout << "Probe device " << argStr << std::endl;
         auto device = SoapySDR::Device::make(argStr);
-        std::cout << "Channels :" << device->getNumChannels(SOAPY_SDR_RX) << std::endl;
+        int channels = device->getNumChannels(SOAPY_SDR_RX);
+        std::cout << "Channels : " << device->getNumChannels(SOAPY_SDR_RX) << std::endl;
         device->getFrequencyRange( SOAPY_SDR_RX, 0);
-        std::cout << "Freq: " << device->getFrequency( SOAPY_SDR_RX, 0, "_") << std::endl;
-        device->getSampleRateRange( SOAPY_SDR_RX, 0);
-        device->setSampleRate( SOAPY_SDR_RX, 0, 128e6);
-        //SoapySDR::Device::unmake(device);
+        std::cout << "Tuner: " << 0 << " Freq : " << device->getFrequency( SOAPY_SDR_RX, 0, "_") << std::endl;
+        device->setFrequency( SOAPY_SDR_RX, 0, "", 1005e6);
+        /*
+        ** Sample Rates
+        */
+        /*
+        SoapySDR::RangeList r = device->getSampleRateRange( SOAPY_SDR_RX, 0);
+        std::vector<SoapySDR::Range>::iterator it;
+        for( it = r.begin(); it != r.end(); it++)
+        {
+            std::cout << "Start: " << it->minimum() << 
+                    " Stop: " << it->maximum() << " Step: " << it->step() << std::endl;
+        }
+        */
+        /**********************************************************************/
+        //for( int i = 0; i < channels; i++){
+        //    std::cout << "Channel: " << i << " Sample Rate: " << device->getSampleRate( SOAPY_SDR_RX, i) << std::endl;
+        //    device->setSampleRate(SOAPY_SDR_RX, i, 32e6);
+        //    std::cout << "Channel: " << i << " Sample Rate: " << device->getSampleRate( SOAPY_SDR_RX, i) << std::endl;
+        //}
+        SoapySDR::Device::unmake(device);
     return EXIT_SUCCESS;
 }
+
