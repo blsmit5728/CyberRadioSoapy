@@ -48,6 +48,7 @@ public:
     //Implement constructor with device specific arguments...
     CyberRadioSoapy( const std::string host, const std::string radio, 
                      std::vector<std::string>& interfaces, bool verbose=false );
+    ~CyberRadioSoapy();
     //Implement all applicable virtual methods from SoapySDR::Device
     std::string getDriverKey(void) const
     {
@@ -72,14 +73,14 @@ public:
     double getFrequency(const int direction, 
                         const size_t channel, const std::string &name) const;
     SoapySDR::RangeList getFrequencyRange(const int direction, 
-                                          const size_t channel, 
-                                          const std::string &name) const;
+                                          const size_t channel) const;
 
     /*******************************************************************
     * Sample Rate API
     ******************************************************************/
     void setSampleRate(const int direction, const size_t channel, const double rate);
     double getSampleRate(const int direction, const size_t channel) const;
+    std::vector<double> listSampleRates(const int direction, const size_t channel) const;
     SoapySDR::RangeList getSampleRateRange(const int direction, const size_t channel) const;
     SoapySDR::Stream* setupStream ( const int direction, 
                         const std::string & format, 

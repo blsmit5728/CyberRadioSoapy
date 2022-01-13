@@ -4,19 +4,42 @@
 
 static cyberradio_devinfo kwargs_to_devinfo(const SoapySDR::Kwargs &args)
 {
-    cyberradio_devinfo info;
-    info.host = args.at("host");
-    info.radio = args.at("radio");
-    std::istringstream f(args.at("streamif").c_str());
-    std::string s;
-    while (getline(f, s, ':')) {
-        info.streamInterfaces.push_back(s);
+    for( auto & it : args)
+    {
+        SoapySDR::logf(SOAPY_SDR_DEBUG, "[\"%s\"] -> %s",it.first.c_str(), it.second.c_str());
     }
-    if ( args.at("verbose") == "true" ) {
-        info.verbose = true;
-    } else {
+    cyberradio_devinfo info;
+    try{
+        info.host = args.at("host");
+    } catch ( const std::exception &ex ) {
+        info.host = "192.168.0.10";
+    }
+    info.radio = args.at("radio");
+    try
+    {
+        std::istringstream f(args.at("streamif").c_str());
+        std::string s;
+        while (getline(f, s, ':')) {
+            info.streamInterfaces.push_back(s);
+        }
+    } catch ( const std::exception &ex ) {
+        SoapySDR::log(SOAPY_SDR_NOTICE, "[CyberRadioSoapy] streamif not provided, defaulting");
+        // max of 4 to satisfy all radios.
+        info.streamInterfaces.push_back("ethNull");
+        info.streamInterfaces.push_back("ethNull");
+        info.streamInterfaces.push_back("ethNull");
+        info.streamInterfaces.push_back("ethNull");
+    }
+    try {
+        if ( args.at("verbose") == "true" ) {
+            info.verbose = true;
+        } else {
+            info.verbose = false;
+        }
+    } catch ( const std::exception &ex ) {
         info.verbose = false;
     }
+    
     return info;
 }
 
@@ -27,11 +50,20 @@ SoapySDR::KwargsList findCyberRadioSoapy(const SoapySDR::Kwargs &args)
 {
         //locate the device on the system...
     //return a list of 0, 1, or more argument maps that each identify a device
-    SoapySDR::KwargsList results;
-    const cyberradio_devinfo info = kwargs_to_devinfo( args );
-    SoapySDR::Kwargs A;
-    A.insert(std::pair<std::string, std::string>("host","192.168.0.10"));
-    results.push_back(A);
+    std::vector<SoapySDR::Kwargs> results;
+    std::vector<std::string> crdResults = LibCyberRadio::Driver::getSupportedDevices();
+    if( args.empty() ) {
+        for( auto & it : crdResults ){
+            SoapySDR::Kwargs devInfo;
+            devInfo["label"] = it.c_str();
+            devInfo["radio"] = it.c_str();
+            //devInfo["streamif"] = "eth10:eth11:eth12:eth13";
+            //devInfo["verbose"] = "false";
+            results.push_back(devInfo);
+        }
+    } else {
+        results.push_back(args);
+    }
     return results;
 }
 
@@ -40,6 +72,7 @@ SoapySDR::KwargsList findCyberRadioSoapy(const SoapySDR::Kwargs &args)
  **********************************************************************/
 SoapySDR::Device *makeCyberRadioSoapy(const SoapySDR::Kwargs &args)
 {
+    SoapySDR::log(SOAPY_SDR_DEBUG, "Making CyberRadio");
     //create an instance of the device object given the args
     //here we will translate args into something used in the constructor
     cyberradio_devinfo info = kwargs_to_devinfo( args );
@@ -54,89 +87,126 @@ CyberRadioSoapy::CyberRadioSoapy( const std::string host,
     _radio( radio ),
     _verbose( verbose)
 {
-    _handler = LibCyberRadio::Driver::getRadioObject( _radio, _host, -1, _verbose );
+    SoapySDR::logf(SOAPY_SDR_NOTICE, "[CyberRadioSoapy] Constructor (%s, %s, -1)",_radio.c_str(), _host.c_str());
+    _handler = LibCyberRadio::Driver::getRadioObject( _radio, _host, 19091, true );
+    //_handler->connect()
     if ( (_handler != NULL) && _handler->isConnected() ) {
-        std::cout << "-- Connect SUCCESS" << std::endl;
+        SoapySDR::log(SOAPY_SDR_NOTICE, "[CyberRadioSoapy] LibCyberRadio Connect SUCCESS");
+    } else if ( (_handler != NULL) && !_handler->isConnected() ) {
+        SoapySDR::log(SOAPY_SDR_ERROR, "[CyberRadioSoapy] LibCyberRadio Connect Error!");
+        _handler = NULL;
     } else {
+        SoapySDR::log(SOAPY_SDR_ERROR, "[CyberRadioSoapy] LibCyberRadio Connect Error!");
         _handler = NULL;
     }
-    LibCyberRadio::BasicStringStringDict versionInfo = _handler->getVersionInfo();
-    std::cout << " -- Serial Number : " << versionInfo["serialNumber"] << std::endl;
-    std::cout << " -- Model         : " << versionInfo["model"] << std::endl;
-    std::cout << " -- Software Ver  : " << versionInfo["softwareVersion"] << std::endl;
-    std::cout << " -- Firmware Ver  : " << versionInfo["firmwareVersion"] << std::endl;
-    std::cout << " -- Unit Revision : " << versionInfo["unitRevision"] << std::endl;
-    std::cout << " -- HW Revision   : " << versionInfo["hardwareVersion"] << std::endl;
-    _cfgDict = _handler->getConfiguration();
-    //this->dumpConfig(_cfgDict);
-    for (int i = 0; i < _handler->getNumTuner(); i++)
-    {
-        tunerCfgVector.push_back(_handler->getTunerConfiguration(i));
-    }
-    //this->dumpConfig(tunerCfgVector.at(0));
-    for (int i = 0; i < _handler->getNumWbddc(); i++)
-    {
-        wbddcCfgVector.push_back(_handler->getWbddcConfiguration(i));
-    }
-    //this->dumpConfig(wbddcCfgVector.at(0));
-    for (int i = 0; i < _handler->getNumNbddc(); i++)
-    {
-        nbddcCfgVector.push_back(_handler->getNbddcConfiguration(i));
-    }
-    //this->dumpConfig(nbddcCfgVector.at(0));
 
-    for( auto & element : _streamingInterfaces )
+    if (_handler != NULL )
     {
-        std::tuple<std::string,std::string,std::string> ip = this->getIPAddress( element );
-        _streamingMap.push_back(ip);
-        //std::cout << element << " ---> " << 
-        //             std::get<0>(ip) << ":" << 
-        //             std::get<1>(ip) << ":" << 
-        //             std::get<2>(ip) << std::endl;   
-    }
-    for( int i = 0; i < _handler->getNumTuner(); i++)
-    {
-        struct cyberradio_channel_info info;
-        info.destIndex = 0;
-        info.linkIndex = i % 4;
-        info.nbddcIndex = i * 16;
-        info.wbddcIndex = i;
-        info.tunerIndex = i;
-        info.rate = 128e6;
-        info.rateIndex = 40;
-        info.hostStreamInterface = _streamingInterfaces.at(i%4);
-        info.hostStreamIp = std::get<1>(_streamingMap.at(i%4));
-        info.hostStreamMac = std::get<2>(_streamingMap.at(i%4));
-        info.sourceStreamIp = this->createSourceIPAddress(info.hostStreamIp);
-        _channelInfoVector.push_back(info);
-        _handler->setWbddcSource( info.wbddcIndex, info.tunerIndex );
-        std::cout << info.tunerIndex << " : " 
-                  << info.hostStreamInterface << "," 
-                  << info.hostStreamIp << "," 
-                  << info.hostStreamMac << ","
-                  << info.sourceStreamIp << std::endl;
-        _handler->enableTuner( i, true);
-    } 
-    // Setup the CFGE10G's
-    int udpPortBase = 10000;
-    for (int i = 0; i < _handler->getNumDataPorts(); i++)
-    {
-        int currPort = udpPortBase;
-        _handler->setDataPortSourceIP(i, _channelInfoVector.at(i).sourceStreamIp);
-        int dests = _handler->getNumDataPortDipEntries();
-        for (int j = 0;  j < dests; j++)
+
+        LibCyberRadio::BasicStringStringDict versionInfo = _handler->getVersionInfo();
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- Serial Number : %s", versionInfo["serialNumber"].c_str());
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- Model         : %s", versionInfo["model"].c_str());
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- Software Ver  : %s", versionInfo["softwareVersion"].c_str());
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- Firmware Ver  : %s", versionInfo["firmwareVersion"].c_str());
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- Unit Revision : %s", versionInfo["unitRevision"].c_str());
+        SoapySDR::logf(SOAPY_SDR_DEBUG, " -- HW Revision   : %s", versionInfo["hardwareVersion"].c_str());
+        _cfgDict = _handler->getConfiguration();
+        //this->dumpConfig(_cfgDict);
+        for (int i = 0; i < _handler->getNumTuner(); i++)
         {
-            currPort = udpPortBase + (1000 * i) + j; // 10000,10001..11000,11001 etc.
-            _handler->setDataPortDestInfo(i, j,
-                    _channelInfoVector.at(i).hostStreamIp,
-                    _channelInfoVector.at(i).hostStreamMac,
-                    currPort,
-                    currPort);
-            _channelInfoVector.at(i).destPorts.push_back(currPort);
+            tunerCfgVector.push_back(_handler->getTunerConfiguration(i));
         }
+        //this->dumpConfig(tunerCfgVector.at(0));
+        for (int i = 0; i < _handler->getNumWbddc(); i++)
+        {
+            wbddcCfgVector.push_back(_handler->getWbddcConfiguration(i));
+        }
+        //this->dumpConfig(wbddcCfgVector.at(0));
+        for (int i = 0; i < _handler->getNumNbddc(); i++)
+        {
+            nbddcCfgVector.push_back(_handler->getNbddcConfiguration(i));
+        }
+        //this->dumpConfig(nbddcCfgVector.at(0));
 
+        for( auto & element : _streamingInterfaces )
+        {
+            if( element != "ethNull") {
+                std::tuple<std::string,std::string,std::string> ip = this->getIPAddress( element );
+                _streamingMap.push_back(ip);
+            } else {
+                _streamingMap.push_back(std::tuple<std::string,std::string,std::string>("ethNull","0.0.0.0","00:00:00:00:00:00"));
+            }
+            //std::cout << element << " ---> " << 
+            //             std::get<0>(ip) << ":" << 
+            //             std::get<1>(ip) << ":" << 
+            //             std::get<2>(ip) << std::endl;   
+        }
+        int dataPorts = _handler->getNumDataPorts();
+        for( int i = 0; i < _handler->getNumTuner(); i++)
+        {
+            struct cyberradio_channel_info info;
+            info.destIndex = 0;
+            info.linkIndex = i % 4;
+            info.nbddcIndex = i * 16;
+            info.wbddcIndex = i;
+            info.tunerIndex = i;
+            info.rate = 128e6;
+            info.rateIndex = 40;
+            info.hostStreamInterface = _streamingInterfaces.at( i % dataPorts);
+            try {
+                info.hostStreamIp = std::get<1>(_streamingMap.at( i % dataPorts));
+                info.hostStreamMac = std::get<2>(_streamingMap.at( i % dataPorts));
+                info.sourceStreamIp = this->createSourceIPAddress(info.hostStreamIp);
+            } catch ( const std::exception &ex ) {
+                info.hostStreamIp = "0.0.0.0";
+                info.hostStreamMac = "00:00:00:00:00:00";
+                info.sourceStreamIp = "1.0.0.0";
+            }
+            _channelInfoVector.push_back(info);
+            _handler->setWbddcSource( info.wbddcIndex, info.tunerIndex );
+            SoapySDR::logf(SOAPY_SDR_NOTICE, "[CyberRadioSoapy] %d %s %s %s %s", 
+                            info.tunerIndex,
+                            info.hostStreamInterface.c_str(),
+                            info.hostStreamIp.c_str(),
+                            info.hostStreamMac.c_str(),
+                            info.sourceStreamIp.c_str());
+            _handler->enableTuner( i, true);
+        } 
+        // Setup the CFGE10G's
+        int udpPortBase = 10000;
+        for (int i = 0; i < _handler->getNumDataPorts(); i++)
+        {
+            int currPort = udpPortBase;
+            if( _channelInfoVector.at(i).hostStreamInterface != "ethNull" )
+            {
+                _handler->setDataPortSourceIP(i, _channelInfoVector.at(i).sourceStreamIp);
+                int dests = _handler->getNumDataPortDipEntries();
+                for (int j = 0;  j < dests; j++)
+                {
+                    currPort = udpPortBase + (1000 * i) + j; // 10000,10001..11000,11001 etc.
+                    _handler->setDataPortDestInfo(i, j,
+                            _channelInfoVector.at(i).hostStreamIp,
+                            _channelInfoVector.at(i).hostStreamMac,
+                            currPort,
+                            currPort);
+                    _channelInfoVector.at(i).destPorts.push_back(currPort);
+                }
+            }
+        }
+        this->collectGlobalRates();
     }
-    this->collectGlobalRates();
+}
+
+CyberRadioSoapy::~CyberRadioSoapy()
+{
+    SoapySDR::log(SOAPY_SDR_NOTICE, "Destructor Called");
+    for( int i = 0; i < _handler->getNumWbddc(); i++)
+    {
+        if ( _handler->isWbddcEnabled(i) )
+        {
+            _handler->enableWbddc(i, false);
+        }
+    }
 }
 
 /*******************************************************************
@@ -144,7 +214,8 @@ CyberRadioSoapy::CyberRadioSoapy( const std::string host,
  ******************************************************************/
 std::string CyberRadioSoapy::getHardwareKey(void) const
 {
-    return "NDR358";
+    LibCyberRadio::BasicStringStringDict versionInfo = this->_handler->getVersionInfo();
+    return versionInfo["model"];
 }
 
 SoapySDR::Kwargs CyberRadioSoapy::getHardwareInfo(void) const
@@ -153,7 +224,13 @@ SoapySDR::Kwargs CyberRadioSoapy::getHardwareInfo(void) const
     LibCyberRadio::BasicStringStringDict versionInfo = this->_handler->getVersionInfo();
     info["serial"] = versionInfo["serialNumber"];
     info["sw_version"] = versionInfo["softwareVersion"];
+    info["model"] = versionInfo["model"];
     return info;
+}
+
+std::string SoapySDR::Device::getDriverKey(void) const
+{
+    return "CyberRadio";
 }
 
 /*******************************************************************
@@ -175,6 +252,7 @@ bool CyberRadioSoapy::getFullDuplex(const int direction, const size_t channel) c
     UNUSED(channel);
     return false;
 }
+
 
 /*******************************************************************
  * Frequency API
@@ -202,13 +280,11 @@ double CyberRadioSoapy::getFrequency(const int direction,
 }
 
 SoapySDR::RangeList CyberRadioSoapy::getFrequencyRange(const int direction, 
-                                                       const size_t channel, 
-                                                       const std::string &name) const
+                                                       const size_t channel ) const
 {
     SoapySDR::RangeList R;
     std::cout << "getFrequencyRange" <<std::endl;
     UNUSED(channel);
-    UNUSED(name);
     LibCyberRadio::BasicDoubleList L;
     if( direction == SOAPY_SDR_RX ){
         L = _handler->getTunerFrequencyRange( );
@@ -251,17 +327,24 @@ void CyberRadioSoapy::setSampleRate(const int direction, const size_t channel, c
     std::map<int, double>::iterator it;
     for( it = _globalRates.begin(); it != _globalRates.end(); it++)
     {
+        SoapySDR::logf(SOAPY_SDR_NOTICE, "Rate: %f <-> %f", it->second, rate );
         if( it->second == rate )
         {
             rateIndex = it->first;
+            SoapySDR::logf(SOAPY_SDR_NOTICE, "RateIndex = %d", rateIndex);
             break;
         }
     }
     if( rateIndex != -1 )
     {
-        if( rateIndex <= 15 ){
-            _handler->setNbddcRateIndex( channel, rateIndex );
-        } else {
+        if( _radio == "ndr358" || _radio == "ndr551" ){
+            if( rateIndex <= 15 ){
+                _handler->setNbddcRateIndex( channel, rateIndex );
+            } else {
+                _handler->setWbddcRateIndex( channel, rateIndex );
+            }
+        }
+        else {
             _handler->setWbddcRateIndex( channel, rateIndex );
         }
         _channelInfoVector.at(channel).rate = rate;
@@ -283,6 +366,26 @@ double CyberRadioSoapy::getSampleRate(const int direction, const size_t channel)
     //r = r + n;
     return S;
 }
+
+std::vector<double> CyberRadioSoapy::listSampleRates(const int direction, const size_t channel) const
+{
+    UNUSED(channel);
+    std::vector<double> rates;
+    LibCyberRadio::BasicDoubleList L;
+    if( direction == SOAPY_SDR_RX ){
+        L = _handler->getNbddcRateList();
+        for( size_t i = 0; i < L.size(); i++ ){
+            rates.push_back( L.at(i) );
+        }
+        L = _handler->getWbddcRateList();
+        for( size_t i = 0; i < L.size(); i++ ){
+            rates.push_back( L.at(i) );
+        }
+        
+    }
+    return rates;
+}
+
 SoapySDR::RangeList CyberRadioSoapy::getSampleRateRange(const int direction, const size_t channel) const
 {
     UNUSED(channel);
@@ -317,8 +420,8 @@ SoapySDR::Stream* CyberRadioSoapy::setupStream ( const int direction,
     if( direction == SOAPY_SDR_RX ) {
         // only process first channel.
         int dest_port = _channelInfoVector.at(0).destPorts.at(0);
-        stream = new LibCyberRadio::VitaIqSource("NDR358IQ", 
-                    551, 
+        stream = new LibCyberRadio::VitaIqSource("NDRIQ", 
+                    1, 
                     _handler->getVitaPayloadSize(), 
                     _handler->getVitaHeaderSize(),
                     _handler->getVitaTailSize(), 
@@ -344,10 +447,8 @@ int CyberRadioSoapy::readStream(SoapySDR::Stream *handle, void * const *buffs,
                            const long timeoutUs)
 {
     LibCyberRadio::VitaIqSource *stream = reinterpret_cast<LibCyberRadio::VitaIqSource *>(handle);
-    LibCyberRadio::Vita49PacketVector packets;
-    int n_recv = stream->getPackets(numElems, packets);
-    //void * n = new char[packets.size() * sizeof(packets)];
-    std::memcpy( (void *)buffs, packets.data(), packets.size() * sizeof(packets) );
+    int n_recv = stream->getPacketsPayloadData(numElems, (void *)buffs);
+    //std::memcpy( (void *)buffs, packets.data(), packets.size() * sizeof(packets) );
     return n_recv;
 }
 
