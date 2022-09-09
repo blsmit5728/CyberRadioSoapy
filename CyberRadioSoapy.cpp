@@ -15,6 +15,10 @@ static cyberradio_devinfo kwargs_to_devinfo(const SoapySDR::Kwargs &args)
         info.host = "192.168.0.10";
     }
     info.radio = args.at("radio");
+    if( info.radio == "ndr324" )
+    {
+        info.vitaType = 324;
+    }
     try
     {
         std::istringstream f(args.at("streamif").c_str());
@@ -421,7 +425,7 @@ SoapySDR::Stream* CyberRadioSoapy::setupStream ( const int direction,
         // only process first channel.
         int dest_port = _channelInfoVector.at(0).destPorts.at(0);
         stream = new LibCyberRadio::VitaIqSource("NDRIQ", 
-                    1, 
+                    324, 
                     _handler->getVitaPayloadSize(), 
                     _handler->getVitaHeaderSize(),
                     _handler->getVitaTailSize(), 
@@ -437,6 +441,7 @@ int CyberRadioSoapy::activateStream(SoapySDR::Stream *handle,
                                     const long long timeNs, 
                                     const size_t numElems)
 {
+    SoapySDR::logf(SOAPY_SDR_NOTICE, "Stream Activated");
     _handler->enableWbddc(0, true);
 }
 
@@ -446,6 +451,7 @@ int CyberRadioSoapy::readStream(SoapySDR::Stream *handle, void * const *buffs,
                            long long &timeNs, 
                            const long timeoutUs)
 {
+    SoapySDR::logf(SOAPY_SDR_NOTICE, "Read Stream called, requesting: %d elements", numElems);
     LibCyberRadio::VitaIqSource *stream = reinterpret_cast<LibCyberRadio::VitaIqSource *>(handle);
     int n_recv = stream->getPacketsPayloadData(numElems, (void *)buffs);
     //std::memcpy( (void *)buffs, packets.data(), packets.size() * sizeof(packets) );

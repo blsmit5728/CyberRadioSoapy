@@ -21,6 +21,7 @@ struct cyberradio_devinfo {
     std::string host;
     std::string radio;
     bool verbose;
+    uint32_t vitaType;
     std::vector<std::string> streamInterfaces;
 };
 
@@ -112,6 +113,7 @@ private:
     std::string _host;
     std::string _radio;
     bool _verbose;
+    uint32_t _vitaType;
     std::tuple<std::string,std::string,std::string> getIPAddress(std::string interface);
     std::string createSourceIPAddress( std::string input );
     std::vector<std::tuple<std::string,std::string,std::string>> _streamingMap;
